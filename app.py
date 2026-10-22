@@ -1084,14 +1084,37 @@ with tab3:
     st.markdown("### 🎥 Nhận Diện Trực Tiếp Bằng Camera / Webcam")
     st.markdown("Hỗ trợ 2 phương thức: **Chụp ảnh tức thì (Snapshot)** hoặc **Mở luồng camera thời gian thực (Live Stream)**.")
     
-    cam_option = st.radio(
-        "Chọn chế độ camera:",
-        options=["📷 Chụp ảnh nhanh từ Camera (Snapshot)", "🔴 Truyền luồng thời gian thực (Live Stream)"],
-        horizontal=True
-    )
+    # Quản lý trạng thái kích hoạt camera để tránh trình duyệt tự động xin quyền khi vừa vào trang
+    if "camera_active" not in st.session_state:
+        st.session_state["camera_active"] = False
+
+    if not st.session_state["camera_active"]:
+        st.info(
+            "🔒 **Bảo Vệ Quyền Riêng Tư & Tối Ưu Tải Trang:**\n\n"
+            "Chức năng Camera đang ở chế độ **TẮT** để tránh trình duyệt tự động hiển thị hộp thoại xin quyền truy cập khi vừa mở website.\n\n"
+            "👉 Hãy nhấn nút bên dưới khi bạn đã sẵn sàng sử dụng Camera trên thiết bị để nhận diện biển báo."
+        )
+        if st.button("🚀 Bật Camera Nhận Diện", type="primary"):
+            st.session_state["camera_active"] = True
+            st.rerun()
+    else:
+        cam_hdr_c1, cam_hdr_c2 = st.columns([3, 1])
+        with cam_hdr_c1:
+            st.success("🟢 **Camera đã được kích hoạt.** Bạn có thể chọn chụp ảnh nhanh hoặc truyền luồng trực tiếp.")
+        with cam_hdr_c2:
+            if st.button("❌ Tắt Camera", use_container_width=True):
+                st.session_state["camera_active"] = False
+                st.session_state["webcam_running"] = False
+                st.rerun()
+
+        cam_option = st.radio(
+            "Chọn chế độ camera:",
+            options=["📷 Chụp ảnh nhanh từ Camera (Snapshot)", "🔴 Truyền luồng thời gian thực (Live Stream)"],
+            horizontal=True
+        )
     
     # Snapshot
-    if "Snapshot" in cam_option:
+    if st.session_state["camera_active"] and "Snapshot" in cam_option:
         st.info("💡 Hướng camera về phía biển báo và nhấn nút **'Take Photo'** để chụp.")
         photo_capture = st.camera_input("Chụp ảnh nhận diện:")
         
@@ -1165,7 +1188,7 @@ with tab3:
                 st.error(f"❌ Lỗi khi xử lý webcam: {e}")
                 
     # Live Stream
-    else:
+    elif st.session_state["camera_active"]:
         st.warning("⚠️ **Lưu ý**: Chế độ này sẽ kết nối trực tiếp camera phần cứng qua OpenCV. Nhấn **'Bắt đầu Webcam'** để mở luồng.")
         
         c_btn1, c_btn2, c_btn3 = st.columns([1, 1, 2])
