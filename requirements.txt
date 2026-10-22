@@ -6,3 +6,5 @@ plotly
 numpy
 imageio
 imageio-ffmpeg
+streamlit-webrtc
+av
