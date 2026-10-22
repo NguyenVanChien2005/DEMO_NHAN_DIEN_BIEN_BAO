@@ -35,6 +35,8 @@ import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 import streamlit as st
+import av
+from streamlit_webrtc import VideoProcessorBase, webrtc_streamer
 from ultralytics import YOLO
 
 # Hỗ trợ mã hóa video H.264 chuẩn Web
@@ -263,6 +265,26 @@ def get_cached_yolo_model(weights_file: str):
 
 # Nạp mô hình
 model, load_error = get_cached_yolo_model(DEFAULT_WEIGHTS)
+
+
+class VideoTransformer(VideoProcessorBase):
+    """Nhận diện từng khung hình camera gửi từ trình duyệt."""
+
+    def __init__(self, yolo_model, confidence: float, iou: float):
+        self.model = yolo_model
+        self.confidence = confidence
+        self.iou = iou
+
+    def recv(self, frame: av.VideoFrame) -> av.VideoFrame:
+        image = frame.to_ndarray(format="bgr24")
+        results = self.model.predict(
+            source=image,
+            conf=self.confidence,
+            iou=self.iou,
+            verbose=False,
+        )
+        annotated = results[0].plot()
+        return av.VideoFrame.from_ndarray(annotated, format="bgr24")
 
 
 # ==============================================================================
@@ -1104,7 +1126,6 @@ with tab3:
         with cam_hdr_c2:
             if st.button("❌ Tắt Camera", use_container_width=True):
                 st.session_state["camera_active"] = False
-                st.session_state["webcam_running"] = False
                 st.rerun()
 
         cam_option = st.radio(
@@ -1187,65 +1208,22 @@ with tab3:
             except Exception as e:
                 st.error(f"❌ Lỗi khi xử lý webcam: {e}")
                 
-    # Live Stream
+    # Live Stream: use the browser camera through WebRTC.
     elif st.session_state["camera_active"]:
-        st.warning("⚠️ **Lưu ý**: Chế độ này sẽ kết nối trực tiếp camera phần cứng qua OpenCV. Nhấn **'Bắt đầu Webcam'** để mở luồng.")
-        
-        c_btn1, c_btn2, c_btn3 = st.columns([1, 1, 2])
-        btn_start = c_btn1.button("▶️ Bắt Đầu Webcam", type="primary")
-        btn_stop = c_btn2.button("⏹️ Dừng Webcam")
-        cam_id = c_btn3.number_input("Cổng Camera ID:", min_value=0, max_value=5, value=0, step=1)
-        
-        frame_placeholder = st.empty()
-        fps_placeholder = st.empty()
-        
-        if btn_start:
-            st.session_state["webcam_running"] = True
-        if btn_stop:
-            st.session_state["webcam_running"] = False
-            
-        if st.session_state.get("webcam_running", False):
-            cap = cv2.VideoCapture(int(cam_id))
-            if not cap.isOpened():
-                st.error(f"❌ Không thể kết nối với Camera ID {cam_id}. Vui lòng kiểm tra lại thiết bị!")
-                st.session_state["webcam_running"] = False
-            else:
-                try:
-                    last_time = time.time()
-                    while st.session_state.get("webcam_running", False):
-                        ret, f_cam = cap.read()
-                        if not ret or f_cam is None:
-                            break
-                        
-                        f_res = model.predict(source=f_cam, conf=conf_threshold, iou=iou_threshold, verbose=False)[0]
-                        f_annotated = f_res.plot()
-                        
-                        now = time.time()
-                        fps_calc = 1.0 / (now - last_time) if (now - last_time) > 0 else 0
-                        last_time = now
-                        
-                        cv2.putText(
-                            f_annotated,
-                            f"YOLOv11 - FPS: {fps_calc:.1f}",
-                            (15, 35),
-                            cv2.FONT_HERSHEY_SIMPLEX,
-                            1.0,
-                            (0, 255, 0),
-                            2,
-                            cv2.LINE_AA
-                        )
-                        
-                        frame_placeholder.image(cv2.cvtColor(f_annotated, cv2.COLOR_BGR2RGB), channels="RGB", use_container_width=True)
-                        fps_placeholder.info(f"⚡ Trạng thái: Đang stream trực tiếp | Tốc độ: **{fps_calc:.1f} FPS**")
-                except Exception as e:
-                    st.error(f"❌ Lỗi luồng webcam: {e}")
-                finally:
-                    cap.release()
-                    frame_placeholder.empty()
-                    fps_placeholder.empty()
-                    st.session_state["webcam_running"] = False
-                    st.info("Đã tắt kết nối Webcam an toàn.")
-
+        st.info(
+            "Allow the browser to access your camera when prompted. "
+            "YOLOv11 will process the live video stream."
+        )
+        webrtc_streamer(
+            key="traffic-sign-stream",
+            video_processor_factory=lambda: VideoTransformer(
+                model,
+                confidence=conf_threshold,
+                iou=iou_threshold,
+            ),
+            media_stream_constraints={"video": True, "audio": False},
+            async_processing=True,
+        )
 
 # ==============================================================================
 # TAB 4: TRA CỨU 8 LỚP BIỂN BÁO GIAO THÔNG (CLASSES REFERENCE CATALOG)
